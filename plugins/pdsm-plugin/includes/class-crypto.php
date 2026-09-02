@@ -4,6 +4,21 @@ class PDSM_Crypto {
     /**
      * Verifica assinatura HMAC-SHA256
      */
+    public function encrypt_secret($data, $key) {
+        $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('aes-256-cbc'));
+        $encrypted = openssl_encrypt($data, 'aes-256-cbc', $key, 0, $iv);
+        return base64_encode($encrypted . '::' . $iv);
+    }
+
+    public function decrypt_secret($data, $key) {
+        $decoded = base64_decode($data);
+        if (strpos($decoded, '::') === false) {
+            return false;
+        }
+        list($encrypted_data, $iv) = explode('::', $decoded, 2);
+        return openssl_decrypt($encrypted_data, 'aes-256-cbc', $key, 0, $iv);
+    }
+
     public function verify_hmac($request, $secret) {
         $timestamp = $request->get_header('X-PDSM-Timestamp');
         $nonce = $request->get_header('X-PDSM-Nonce');

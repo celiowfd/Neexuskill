@@ -107,10 +107,17 @@ class PDSM_Client_API {
             }
         }
 
-        // Coleta últimas linhas do debug.log
+        // Coleta últimas linhas do debug.log com sanitização
         $log_file = WP_CONTENT_DIR . '/debug.log';
         if (file_exists($log_file)) {
-            $data['debug_log'] = file_get_contents($log_file, false, null, -5000);
+            $raw_log = file_get_contents($log_file, false, null, -5000);
+            
+            // Sanitização
+            $safe_log = str_replace(ABSPATH, '[ABSPATH]/', $raw_log);
+            $safe_log = preg_replace('/(password|pwd|secret)=([^\s&]+)/i', '$1=***', $safe_log);
+            $safe_log = preg_replace('/(DB_PASSWORD)([\s=]+)([^\s;]+)/i', '$1$2***', $safe_log);
+
+            $data['debug_log'] = $safe_log;
         }
 
         return rest_ensure_response($data);

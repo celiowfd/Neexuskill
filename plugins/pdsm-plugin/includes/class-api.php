@@ -1,14 +1,15 @@
 <?php
 class PDSM_API {
 
-    private $site_manager, $job_manager, $updater, $installer, $crypto;
+    private $site_manager, $job_manager, $updater, $installer, $crypto, $internal_agent;
 
-    public function __construct($sm, $jm, $up, $ins, $cry) {
+    public function __construct($sm, $jm, $up, $ins, $cry, $agent) {
         $this->site_manager = $sm;
         $this->job_manager = $jm;
         $this->updater = $up;
         $this->installer = $ins;
         $this->crypto = $cry;
+        $this->internal_agent = $agent;
     }
 
     public function init() {
@@ -16,48 +17,94 @@ class PDSM_API {
     }
 
     public function register_routes() {
+        // Jobs
         register_rest_route(PDSM_API_NAMESPACE, '/jobs', [
-            'methods' => 'POST',
-            'callback' => [$this, 'create_job_endpoint'],
+            'methods'             => 'POST',
+            'callback'            => [$this, 'create_job_endpoint'],
             'permission_callback' => [$this, 'auth_hmac_rbac']
         ]);
+
         register_rest_route(PDSM_API_NAMESPACE, '/jobs/(?P<id>\d+)', [
-            'methods' => 'GET',
-            'callback' => [$this, 'get_job_status'],
+            'methods'             => 'GET',
+            'callback'            => [$this, 'get_job_status'],
             'permission_callback' => [$this, 'auth_hmac_rbac']
         ]);
-        // ... outros endpoints (sites, etc) com mesma proteção
+
+        // Sites
+        register_rest_route(PDSM_API_NAMESPACE, '/sites', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'get_sites'],
+            'permission_callback' => [$this, 'auth_hmac_rbac']
+        ]);
+
+        register_rest_route(PDSM_API_NAMESPACE, '/sites', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'add_site'],
+            'permission_callback' => [$this, 'auth_hmac_rbac']
+        ]);
+
+        // Agente
+        register_rest_route(PDSM_API_NAMESPACE, '/agent/diagnose', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'api_diagnose'],
+            'permission_callback' => [$this, 'auth_hmac_rbac']
+        ]);
+
+        register_rest_route(PDSM_API_NAMESPACE, '/agent/heal', [
+            'methods'             => 'POST',
+            'callback'            => [$this, 'api_heal'],
+            'permission_callback' => [$this, 'auth_hmac_rbac']
+        ]);
+
+        register_rest_route(PDSM_API_NAMESPACE, '/agent/knowledge', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'api_get_knowledge'],
+            'permission_callback' => [$this, 'auth_hmac_rbac']
+        ]);
     }
 
     public function auth_hmac_rbac($request) {
         $api_key = $request->get_header('X-API-Key');
-        if (!$api_key) return false;
-
-        // Busca credencial do site
-        $sites = $this->site_manager->get_sites();
-        $site = null;
-        foreach ($sites as $s) {
-            if ($s['api_key'] === $api_key) {
-                $site = $s;
-                break;
-            }
-        }
-        if (!$site) return false;
-
-        // HMAC
-        if (!$this->crypto->verify_hmac($request, $site['api_key'])) {
+        if (!$api_key) {
             return false;
         }
 
-        // Rate Limiting (10 req/min)
-        $ip = $_SERVER['REMOTE_ADDR'];
+        $site = $this->site_manager->get_site_by_api_key($api_key);
+        if (!$site) {
+            return false;
+        }
+
+        // HMAC
+        if (!$this->crypto->verify_hmac($request, $site['secret'])) {
+            return false;
+        }
+
+        // Rate Limiting
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
         $rate_key = 'pdsm_rate_' . md5($ip . $api_key);
         $count = get_transient($rate_key) ?: 0;
-        if ($count > 10) return false;
+        if ($count > 10) {
+            return false;
+        }
         set_transient($rate_key, $count + 1, 60);
 
-        // RBAC (simplificado: permite tudo se for admin, mas lê scopes do perfil)
-        // Aqui poderíamos verificar uma meta capability.
+        // RBAC Efetivo
+        $route = $request->get_route();
+        $method = $request->get_method();
+        
+        // Verifica as permissões reais na array do site (Mock de capabilities)
+        $capabilities = $site['capabilities'] ?? ['read', 'write', 'diagnose', 'heal'];
+        
+        if (strpos($route, '/agent/diagnose') !== false && !in_array('diagnose', $capabilities)) {
+            return false; // Proibido diagnosticar
+        }
+        if (strpos($route, '/agent/heal') !== false && !in_array('heal', $capabilities)) {
+            return false; // Proibido curar
+        }
+        if (strpos($route, '/jobs') !== false && $method === 'POST' && !in_array('write', $capabilities)) {
+            return false; // Proibido criar jobs
+        }
+
         return true;
     }
 
@@ -72,6 +119,51 @@ class PDSM_API {
     public function get_job_status($request) {
         $id = $request->get_param('id');
         $status = $this->job_manager->get_status($id);
+        if (!$status) {
+            return new WP_Error('not_found', 'Job não encontrado', ['status' => 404]);
+        }
         return rest_ensure_response($status);
+    }
+
+    public function get_sites() {
+        return rest_ensure_response($this->site_manager->get_sites());
+    }
+
+    public function add_site($request) {
+        $domain = $request->get_param('domain');
+        $api_key = $request->get_param('api_key');
+        $label = $request->get_param('label');
+
+        $result = $this->site_manager->add_site($domain, $api_key, $label);
+        if (is_wp_error($result)) {
+            return $result;
+        }
+        return rest_ensure_response(['message' => 'Site adicionado com sucesso']);
+    }
+
+    public function api_diagnose($request) {
+        $domain = $request->get_param('domain');
+        if (!$domain) {
+            return new WP_Error('missing_domain', 'Domínio obrigatório');
+        }
+        $result = $this->internal_agent->diagnose_site($domain);
+        return rest_ensure_response($result);
+    }
+
+    public function api_heal($request) {
+        $domain = $request->get_param('domain');
+        $auto = $request->get_param('auto') !== false;
+        if (!$domain) {
+            return new WP_Error('missing_domain', 'Domínio obrigatório');
+        }
+        $result = $this->internal_agent->resolve_issues($domain, $auto);
+        return rest_ensure_response($result);
+    }
+
+    public function api_get_knowledge() {
+        global $wpdb;
+        $table = $wpdb->prefix . 'pdsm_agent_knowledge';
+        $rows = $wpdb->get_results("SELECT * FROM {$table} ORDER BY (success_count/(success_count+failure_count+1)) DESC LIMIT 50");
+        return rest_ensure_response($rows);
     }
 }
