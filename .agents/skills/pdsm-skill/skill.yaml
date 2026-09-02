@@ -1,0 +1,10 @@
+name: pdsm-skill
+description: Gerencia múltiplos sites WordPress através do plugin Pack de Sites Manager.
+version: 1.0.0
+author: Antigravity Assistant
+compatibility:
+  antigravity: ">=1.0.0"
+tags:
+  - wordpress
+  - admin
+  - mcp

@@ -1,0 +1,10 @@
+.status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+.status-active { background: #c6e1c6; color: #2b542c; }
+.status-inactive { background: #f2dede; color: #a94442; }
+.pdsm-diagnose, .pdsm-heal { margin-right: 5px; }

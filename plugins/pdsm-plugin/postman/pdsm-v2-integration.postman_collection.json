@@ -1,0 +1,108 @@
+{
+	"info": {
+		"_postman_id": "c622b7a9-e0b4-4c54-9b2f-7f789d9e4a3b",
+		"name": "PDSM v2 Integration",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Adicionar Site (Hub)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-API-Key",
+						"value": "{{MASTER_API_KEY}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"domain\":\"https://site1.com\",\"api_key\":\"client_pub_key\",\"label\":\"Site 1\"}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{HUB_URL}}/wp-json/pdsm/v2/sites",
+					"host": [
+						"{{HUB_URL}}"
+					],
+					"path": [
+						"wp-json",
+						"pdsm",
+						"v2",
+						"sites"
+					]
+				}
+			}
+		},
+		{
+			"name": "Criar Job de Update (Hub)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-API-Key",
+						"value": "{{MASTER_API_KEY}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"action\":\"update_plugin\",\"payload\":{\"plugin_slug\":\"woocommerce\",\"domains\":[\"https://site1.com\"]}}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{HUB_URL}}/wp-json/pdsm/v2/jobs",
+					"host": [
+						"{{HUB_URL}}"
+					],
+					"path": [
+						"wp-json",
+						"pdsm",
+						"v2",
+						"jobs"
+					]
+				}
+			}
+		},
+		{
+			"name": "Simular Request Client (Diagnose)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "X-PDSM-Timestamp",
+						"value": "1234567890"
+					},
+					{
+						"key": "X-PDSM-Nonce",
+						"value": "randomhex123"
+					},
+					{
+						"key": "X-PDSM-Signature",
+						"value": "hmac_signature_here"
+					}
+				],
+				"url": {
+					"raw": "{{CLIENT_URL}}/wp-json/pdsm/v2/client/diagnose",
+					"host": [
+						"{{CLIENT_URL}}"
+					],
+					"path": [
+						"wp-json",
+						"pdsm",
+						"v2",
+						"client",
+						"diagnose"
+					]
+				}
+			}
+		}
+	]
+}
