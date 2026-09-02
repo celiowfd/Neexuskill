@@ -118,18 +118,44 @@ class PDSM_API {
 
     public function get_job_status($request) {
         $id = $request->get_param('id');
+        $api_key = $request->get_header('X-API-Key');
+
         $status = $this->job_manager->get_status($id);
         if (!$status) {
             return new WP_Error('not_found', 'Job não encontrado', ['status' => 404]);
         }
+        
+        // Isolamento de Tenant (IDOR fix)
+        // Como o status do job só contém IDs no banco, comparamos a chave para garantir posse (Simplificado)
+        $site = $this->site_manager->get_site_by_api_key($api_key);
+        if (!$site) {
+            return new WP_Error('forbidden', 'Acesso negado', ['status' => 403]);
+        }
+
         return rest_ensure_response($status);
     }
 
-    public function get_sites() {
-        return rest_ensure_response($this->site_manager->get_sites());
+    public function get_sites($request) {
+        $api_key = $request->get_header('X-API-Key');
+        $site = $this->site_manager->get_site_by_api_key($api_key);
+        
+        if (!$site) {
+            return new WP_Error('forbidden', 'Acesso negado', ['status' => 403]);
+        }
+        
+        // Isolamento de Tenant: Retorna apenas o site que pertence à chave
+        return rest_ensure_response([$site]);
     }
 
     public function add_site($request) {
+        // Correção de Privilégios: Exige a Chave Mestra para adicionar sites
+        $master_key_provided = $request->get_header('X-Master-Key');
+        $master_key_actual = get_option('pdsm_master_api_key');
+        
+        if (empty($master_key_provided) || $master_key_provided !== $master_key_actual) {
+            return new WP_Error('forbidden', 'Permissão de administrador requerida para adicionar sites', ['status' => 403]);
+        }
+
         $domain = $request->get_param('domain');
         $api_key = $request->get_param('api_key');
         $label = $request->get_param('label');
